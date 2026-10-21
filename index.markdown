@@ -20,11 +20,12 @@ layout: home
 </style>
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 
+<h1 id="cur-heading">Reading this year vs last year</h1>
 <div class="year-cols">
   {% assign cols = "cur,prev" | split: "," %}
   {% for c in cols %}
   <div class="year-col">
-    <h1 id="{{ c }}-heading">Loading...</h1>
+    <h3 id="{{ c }}-label">Loading...</h3>
     <div class="year-row">
       <div class="stat-box">
         <div class="stat-label">Books read</div>
@@ -35,12 +36,12 @@ layout: home
         <div class="stat-value" id="{{ c }}-pages">Loading...</div>
       </div>
     </div>
-    <div class="year-row">
-      <div class="pie" id="{{ c }}-pie-format"></div>
-      <div class="pie" id="{{ c }}-pie-fiction"></div>
-    </div>
   </div>
   {% endfor %}
+</div>
+<div class="year-row">
+  <div class="pie" id="cur-pie-format"></div>
+  <div class="pie" id="cur-pie-fiction"></div>
 </div>
 <script>
   (function () {
@@ -105,14 +106,15 @@ layout: home
 
       function showYear(prefix, y) {
         const s = byYear[y] || { books: 0, pages: 0, F: 0, NF: 0, CM: 0, CB: 0 };
-        document.getElementById(prefix + "-heading").textContent = "Reading in " + y;
+        document.getElementById(prefix + "-label").textContent = y;
         document.getElementById(prefix + "-books").textContent = fmt(s.books);
         document.getElementById(prefix + "-pages").textContent = fmt(s.pages);
+        if (prefix !== "cur") return;
         if (s.books) {
-          pie(prefix + "-pie-format", y + ": comic/manga vs chapter books", ["Comic/Manga", "Chapter books"], [s.CM, s.CB]);
-          pie(prefix + "-pie-fiction", y + ": fiction vs nonfiction", ["Fiction", "Nonfiction"], [s.F, s.NF]);
+          pie("cur-pie-format", y + ": comic/manga vs chapter books", ["Comic/Manga", "Chapter books"], [s.CM, s.CB]);
+          pie("cur-pie-fiction", y + ": fiction vs nonfiction", ["Fiction", "Nonfiction"], [s.F, s.NF]);
         } else {
-          document.getElementById(prefix + "-pie-format").textContent = "No books finished in " + y + ".";
+          document.getElementById("cur-pie-format").textContent = "No books finished in " + y + " yet.";
         }
       }
       showYear("cur", year);

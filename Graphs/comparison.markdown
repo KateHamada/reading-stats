@@ -18,12 +18,39 @@ permalink: /Graphs/comparison.html
 <div id="year-filter"><label>Year: <select id="year-select"></select></label></div>
 <div id="chart-msg"></div>
 <div id="chart"></div>
+<div id="bar-chart"></div>
 <details>
   <summary>Show data table</summary>
   <table id="chart-table"></table>
 </details>
 
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 <script>
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const PALETTE = ["#3b82c4"];
+
+  // Minimal CSV parser that handles quoted fields containing commas.
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') inQuotes = false;
+        else field += c;
+      } else if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); field = "";
+        rows.push(row); row = [];
+      } else field += c;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
   const msg = document.getElementById("chart-msg");
   const url = "{{ '/data/Raw Book Data.csv' | relative_url }}".replace(/ /g, "%20");
 
@@ -67,7 +94,7 @@ permalink: /Graphs/comparison.html
       // every month in range, so empty months show as flat
       const startYear = selected === "All" ? firstYear : selected;
       const endYear = selected === "All" ? lastYear : selected;
-      const labels = [], totals = [];
+      const labels = [], totals = [], monthly = [];
       let sum = 0;
       for (let yr = startYear; yr <= endYear; yr++) {
         for (let mo = 1; mo <= 12; mo++) {
@@ -76,9 +103,35 @@ permalink: /Graphs/comparison.html
           sum += perMonth[key] || 0;
           labels.push(selected === "All" ? MONTH_NAMES[mo - 1] + " " + yr : MONTH_NAMES[mo - 1]);
           totals.push(sum);
+          monthly.push(perMonth[key] || 0);
         }
       }
-      draw(labels, totals, selected === "All" ? "Cumulative books read, all years" : "Cumulative books read in " + selected);
+      const suffix = selected === "All" ? ", all years" : " in " + selected;
+      draw(labels, totals, "Cumulative books read" + suffix);
+      drawBars(labels, monthly, "Books read per month" + suffix);
+    }
+
+    function layoutFor(title, yTitle) {
+      return {
+        height: 480,
+        title: { text: title },
+        margin: { t: 60, r: 24, b: 80, l: 70 },
+        paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff",
+        font: { color: "#1f2937" },
+        xaxis: { title: { text: "Month" }, type: "category", gridcolor: "#d1d5db", fixedrange: true },
+        yaxis: { title: { text: yTitle }, rangemode: "tozero", gridcolor: "#d1d5db", fixedrange: true }
+      };
+    }
+    const configFor = title => ({
+      responsive: true, displaylogo: false,
+      toImageButtonOptions: { format: "png", filename: title.replace(/[^\w]+/g, "_"), width: 1100, height: 650, scale: 2 }
+    });
+
+    function drawBars(labels, monthly, title) {
+      Plotly.react("bar-chart", [{
+        x: labels, y: monthly, type: "bar",
+        marker: { color: PALETTE[0] }, hovertemplate: "%{y} books<extra></extra>"
+      }], layoutFor(title, "Books read"), configFor(title));
     }
 
     function draw(labels, totals, title) {
@@ -86,18 +139,7 @@ permalink: /Graphs/comparison.html
       x: labels, y: totals, type: "scatter", mode: "lines+markers",
       line: { color: PALETTE[0], width: 2 }, marker: { size: 7 },
       hovertemplate: "%{y} books"
-    }], {
-      height: 480,
-      title: { text: title },
-      margin: { t: 60, r: 24, b: 80, l: 70 },
-      paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff",
-      font: { color: "#1f2937" },
-      xaxis: { title: { text: "Month" }, type: "category", gridcolor: "#d1d5db", fixedrange: true },
-      yaxis: { title: { text: "Books read (cumulative)" }, rangemode: "tozero", gridcolor: "#d1d5db", fixedrange: true }
-    }, {
-      responsive: true, displaylogo: false,
-      toImageButtonOptions: { format: "png", filename: title.replace(/[^\w]+/g, "_"), width: 1100, height: 650, scale: 2 }
-    });
+    }], layoutFor(title, "Books read (cumulative)"), configFor(title));
 
     const table = document.getElementById("chart-table");
     table.replaceChildren();
