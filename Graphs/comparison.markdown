@@ -6,6 +6,12 @@ permalink: /Graphs/comparison.html
 
 <style>
   .home .page-heading { display: none; }
+  #year-buttons { margin: 0.5em 0; }
+  #year-buttons button {
+    margin: 0 6px 6px 0; padding: 4px 12px; cursor: pointer;
+    border: 1px solid #c5d9ee; border-radius: 4px; background: #eef4fb; color: #1f2937;
+  }
+  #year-buttons button.active { background: #2a6fb0; border-color: #2a6fb0; color: #fff; }
 </style>
 
 {% include quick-links.html %}
@@ -14,6 +20,7 @@ permalink: /Graphs/comparison.html
 
 <h3>Cumulative books read</h3>
 <div>Rises when a book is finished and stays flat in months with none.</div>
+<div id="year-buttons"></div>
 <div id="chart-msg"></div>
 <div id="chart"></div>
 <details>
@@ -44,22 +51,46 @@ permalink: /Graphs/comparison.html
     const keys = Object.keys(perMonth).sort();
     if (!keys.length) throw new Error("no finished books found");
 
-    // every month from the first finish to now, so empty months show as flat
     const now = new Date();
-    const end = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
-    const last = keys[keys.length - 1] > end ? keys[keys.length - 1] : end;
-    const labels = [], totals = [];
-    let [y, mo] = keys[0].split("-").map(Number), sum = 0;
-    for (;;) {
-      const key = y + "-" + String(mo).padStart(2, "0");
-      sum += perMonth[key] || 0;
-      labels.push(MONTH_NAMES[mo - 1] + " " + y);
-      totals.push(sum);
-      if (key === last) break;
-      if (++mo > 12) { mo = 1; y++; }
+    const nowKey = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    const firstYear = Number(keys[0].slice(0, 4));
+    const lastYear = Math.max(Number(keys[keys.length - 1].slice(0, 4)), now.getFullYear());
+    const years = [];
+    for (let yr = firstYear; yr <= lastYear; yr++) years.push(yr);
+
+    const buttons = document.getElementById("year-buttons");
+    ["All"].concat(years).forEach(v => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = v === "All" ? "All years" : v;
+      b.dataset.value = v;
+      b.addEventListener("click", () => render(v));
+      buttons.append(b);
+    });
+
+    function render(selected) {
+      buttons.querySelectorAll("button").forEach(b => {
+        b.classList.toggle("active", b.dataset.value === String(selected));
+      });
+      // every month in range, so empty months show as flat
+      const startYear = selected === "All" ? firstYear : selected;
+      const endYear = selected === "All" ? lastYear : selected;
+      const labels = [], totals = [];
+      let sum = 0;
+      for (let yr = startYear; yr <= endYear; yr++) {
+        for (let mo = 1; mo <= 12; mo++) {
+          const key = yr + "-" + String(mo).padStart(2, "0");
+          if (key > nowKey && key > keys[keys.length - 1]) break;
+          sum += perMonth[key] || 0;
+          labels.push(MONTH_NAMES[mo - 1] + " " + yr);
+          totals.push(sum);
+        }
+      }
+      draw(labels, totals);
     }
 
-    Plotly.newPlot("chart", [{
+    function draw(labels, totals) {
+    Plotly.react("chart", [{
       x: labels, y: totals, type: "scatter", mode: "lines+markers",
       line: { color: PALETTE[0], width: 2 }, marker: { size: 7 },
       hovertemplate: "%{y} books"
@@ -73,7 +104,11 @@ permalink: /Graphs/comparison.html
     }, { responsive: true, displaylogo: false });
 
     const table = document.getElementById("chart-table");
+    table.replaceChildren();
     table.insertAdjacentHTML("beforeend", "<tr><th>Month</th><th>Cumulative books</th></tr>");
     labels.forEach((l, i) => table.insertAdjacentHTML("beforeend", "<tr><td>" + l + "</td><td>" + totals[i] + "</td></tr>"));
+    }
+
+    render(now.getFullYear());
   }).catch(err => { msg.textContent = "Failed to load chart: " + err.message; });
 </script>
