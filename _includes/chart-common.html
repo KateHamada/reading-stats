@@ -1,0 +1,163 @@
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<script>
+  // Everything here is driven by the settings in _config.yml.
+  const CFG = {
+    dataUrl: "{{ site.data_file | default: 'data/sample.csv' | prepend: '/' | relative_url }}",
+    valueLabel: {{ site.value_label | default: "Value" | jsonify }},
+    valueUnit: {{ site.value_unit | default: "" | jsonify }},
+    startMonth: {{ site.start_month | default: 1 }}   // 1 = periods are calendar years; 7 = July-June years, etc.
+  };
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const MONTHS = MONTH_NAMES.slice(CFG.startMonth - 1).concat(MONTH_NAMES.slice(0, CFG.startMonth - 1));
+  const monthPos = m => (m - CFG.startMonth + 12) % 12;
+  const axisLabel = CFG.valueUnit ? CFG.valueLabel + " (" + CFG.valueUnit + ")" : CFG.valueLabel;
+  const PALETTE = ["#3b82c4", "#e08a2e", "#3da36b", "#9b6bc9", "#d65a7a", "#8a8f98"];
+
+  // Period label for a date: the calendar year, or the year the period ends in when it
+  // starts mid-year (start_month 7 -> Jul 2023 belongs to "FY24").
+  function periodOf(year, month) {
+    if (CFG.startMonth === 1) return String(year);
+    return "FY" + String((month >= CFG.startMonth ? year + 1 : year) % 100).padStart(2, "0");
+  }
+
+  // Minimal CSV parser that handles quoted fields containing commas.
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') inQuotes = false;
+        else field += c;
+      } else if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); field = "";
+        rows.push(row); row = [];
+      } else field += c;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  // Reads the CSV (columns: item, date as YYYY-M-D, value) into [{ item, period, pos, value }].
+  async function loadRecords() {
+    const res = await fetch(CFG.dataUrl);
+    if (!res.ok) throw new Error("could not load " + CFG.dataUrl);
+    const rows = parseCSV(await res.text());
+    const header = rows[0].map(h => h.trim());
+    const ii = header.indexOf("item"), di = header.indexOf("date"), vi = header.indexOf("value");
+    if (ii < 0 || di < 0 || vi < 0) throw new Error("the CSV needs item, date and value columns");
+    const records = [];
+    for (const r of rows.slice(1)) {
+      const [y, m] = (r[di] || "").split("-").map(Number);
+      const value = parseFloat((r[vi] || "").replace(/,/g, ""));
+      if (!y || !m || Number.isNaN(value)) continue;
+      records.push({ item: (r[ii] || "").trim(), period: periodOf(y, m), pos: monthPos(m), value });
+    }
+    return records;
+  }
+
+  // sums[period][monthPosition]; optionally only for one item. Months with no data stay null.
+  function sumByPeriod(records, item) {
+    const out = {};
+    records.forEach(r => {
+      if (item !== undefined && r.item !== item) return;
+      const vals = out[r.period] = out[r.period] || Array(12).fill(null);
+      vals[r.pos] = (vals[r.pos] || 0) + r.value;
+    });
+    return out;
+  }
+
+  const fmt = v => v === null || v === undefined ? "" : v.toLocaleString();
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  // Table with a Month column and one column per series ([{ name, vals }]).
+  function fillMonthTable(table, series) {
+    table.replaceChildren();
+    if (!series.length) return;
+    table.insertAdjacentHTML("beforeend",
+      "<tr><th>Month</th>" + series.map(s => "<th>" + esc(s.name) + "</th>").join("") + "</tr>");
+    MONTHS.forEach((m, i) => {
+      table.insertAdjacentHTML("beforeend",
+        "<tr><td>" + m + "</td>" + series.map(s => "<td>" + fmt(s.vals[i]) + "</td>").join("") + "</tr>");
+    });
+  }
+
+  // Download a PNG that includes value labels, axis titles and a title. The export is drawn
+  // in an off-screen chart so the on-screen chart never flickers.
+  async function savePngWithValues(gd, title, filename) {
+    const W = 1100, H = 650;
+    const tmp = document.createElement("div");
+    tmp.style.cssText = "position:fixed; left:-10000px; top:0; width:" + W + "px; height:" + H + "px;";
+    document.body.append(tmp);
+    try {
+      const exportData = gd.data.map((trace, i) => Object.assign({}, trace, {
+        mode: "lines+markers+text",
+        texttemplate: "%{y:,.0f}",
+        // alternate above/below so labels from different series overlap less
+        textposition: i % 2 ? "bottom center" : "top center"
+      }));
+      const exportLayout = Object.assign({}, gd.layout, {
+        width: W,
+        height: H,
+        title: { text: title },
+        paper_bgcolor: "#ffffff",
+        margin: { t: 60, r: 24, b: 80, l: 80 },
+        xaxis: Object.assign({}, gd.layout.xaxis, { title: { text: "Month" } }),
+        yaxis: Object.assign({}, gd.layout.yaxis, { title: { text: axisLabel } })
+      });
+      await Plotly.newPlot(tmp, exportData, exportLayout, { staticPlot: true });
+      await Plotly.downloadImage(tmp, { format: "png", width: W, height: H, scale: 2, filename: filename });
+    } finally {
+      Plotly.purge(tmp);
+      tmp.remove();
+    }
+  }
+
+  // Draw one line per entry in series ([{ name, vals, color }]) into the given element.
+  // exportTitle is a function returning the title used for the PNG download.
+  function drawLines(el, series, exportTitle) {
+    const grid = "#d1d5db";
+    // null values leave a gap in the line instead of being drawn as zero.
+    Plotly.react(el, series.map(s => ({
+      x: MONTHS,
+      y: s.vals,
+      type: "scatter",
+      mode: "lines+markers",
+      name: s.name,
+      line: { color: s.color, width: 2 },
+      marker: { size: 8 },
+      connectgaps: false,
+      hovertemplate: "%{y:,} " + CFG.valueUnit
+    })), {
+      height: 450,
+      margin: { t: 20, r: 24, b: 40, l: 70 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { color: "#1f2937" },
+      hoverlabel: { bgcolor: "#ffffff", bordercolor: "#d1d5db", font: { color: "#1f2937" } },
+      hovermode: "x unified",
+      showlegend: series.length > 1,
+      legend: { orientation: "h", y: -0.12 },
+      xaxis: { categoryorder: "array", categoryarray: MONTHS, gridcolor: grid, fixedrange: true },
+      yaxis: { title: CFG.valueUnit || CFG.valueLabel, rangemode: "tozero", gridcolor: grid, fixedrange: true }
+    }, {
+      responsive: true,
+      displaylogo: false,
+      // replace the stock camera button so downloads include titles, units and values
+      modeBarButtonsToRemove: ["toImage"],
+      modeBarButtonsToAdd: [{
+        name: "Download PNG with values",
+        title: "Download PNG with values",
+        icon: Plotly.Icons.camera,
+        click: gd => {
+          const title = exportTitle();
+          return savePngWithValues(gd, title, title.replace(/[^\w]+/g, "_"));
+        }
+      }]
+    });
+  }
+</script>
