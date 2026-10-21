@@ -20,7 +20,7 @@ layout: home
 </style>
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 
-<h1 id="cur-heading">Reading this year vs last year</h1>
+<h1 id="cur-heading">Reading This Year vs Last Year</h1>
 <div class="year-cols">
   {% assign cols = "cur,prev" | split: "," %}
   {% for c in cols %}
