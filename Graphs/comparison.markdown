@@ -6,21 +6,16 @@ permalink: /Graphs/comparison.html
 
 <style>
   .home .page-heading { display: none; }
-  #year-buttons { margin: 0.5em 0; }
-  #year-buttons button {
-    margin: 0 6px 6px 0; padding: 4px 12px; cursor: pointer;
-    border: 1px solid #c5d9ee; border-radius: 4px; background: #eef4fb; color: #1f2937;
-  }
-  #year-buttons button.active { background: #2a6fb0; border-color: #2a6fb0; color: #fff; }
+  #year-filter { margin: 0.5em 0; }
+  #year-filter select { padding: 4px 8px; margin-left: 4px; }
 </style>
 
 {% include quick-links.html %}
 {% include table-export.html %}
-{% include chart-common.html %}
 
 <h3>Cumulative books read</h3>
 <div>Rises when a book is finished and stays flat in months with none.</div>
-<div id="year-buttons"></div>
+<div id="year-filter"><label>Year: <select id="year-select"></select></label></div>
 <div id="chart-msg"></div>
 <div id="chart"></div>
 <details>
@@ -58,20 +53,17 @@ permalink: /Graphs/comparison.html
     const years = [];
     for (let yr = firstYear; yr <= lastYear; yr++) years.push(yr);
 
-    const buttons = document.getElementById("year-buttons");
+    const buttons = document.getElementById("year-select");
     ["All"].concat(years).forEach(v => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = v === "All" ? "All years" : v;
-      b.dataset.value = v;
-      b.addEventListener("click", () => render(v));
-      buttons.append(b);
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = v === "All" ? "All years" : v;
+      buttons.append(o);
     });
+    buttons.addEventListener("change", () => render(buttons.value === "All" ? "All" : Number(buttons.value)));
 
     function render(selected) {
-      buttons.querySelectorAll("button").forEach(b => {
-        b.classList.toggle("active", b.dataset.value === String(selected));
-      });
+      buttons.value = String(selected);
       // every month in range, so empty months show as flat
       const startYear = selected === "All" ? firstYear : selected;
       const endYear = selected === "All" ? lastYear : selected;
@@ -82,26 +74,30 @@ permalink: /Graphs/comparison.html
           const key = yr + "-" + String(mo).padStart(2, "0");
           if (key > nowKey && key > keys[keys.length - 1]) break;
           sum += perMonth[key] || 0;
-          labels.push(MONTH_NAMES[mo - 1] + " " + yr);
+          labels.push(selected === "All" ? MONTH_NAMES[mo - 1] + " " + yr : MONTH_NAMES[mo - 1]);
           totals.push(sum);
         }
       }
-      draw(labels, totals);
+      draw(labels, totals, selected === "All" ? "Cumulative books read, all years" : "Cumulative books read in " + selected);
     }
 
-    function draw(labels, totals) {
+    function draw(labels, totals, title) {
     Plotly.react("chart", [{
       x: labels, y: totals, type: "scatter", mode: "lines+markers",
       line: { color: PALETTE[0], width: 2 }, marker: { size: 7 },
       hovertemplate: "%{y} books"
     }], {
-      height: 450,
-      margin: { t: 20, r: 24, b: 60, l: 70 },
-      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      height: 480,
+      title: { text: title },
+      margin: { t: 60, r: 24, b: 80, l: 70 },
+      paper_bgcolor: "#ffffff", plot_bgcolor: "#ffffff",
       font: { color: "#1f2937" },
-      xaxis: { type: "category", gridcolor: "#d1d5db", fixedrange: true },
-      yaxis: { title: "Books read (cumulative)", rangemode: "tozero", gridcolor: "#d1d5db", fixedrange: true }
-    }, { responsive: true, displaylogo: false });
+      xaxis: { title: { text: "Month" }, type: "category", gridcolor: "#d1d5db", fixedrange: true },
+      yaxis: { title: { text: "Books read (cumulative)" }, rangemode: "tozero", gridcolor: "#d1d5db", fixedrange: true }
+    }, {
+      responsive: true, displaylogo: false,
+      toImageButtonOptions: { format: "png", filename: title.replace(/[^\w]+/g, "_"), width: 1100, height: 650, scale: 2 }
+    });
 
     const table = document.getElementById("chart-table");
     table.replaceChildren();
