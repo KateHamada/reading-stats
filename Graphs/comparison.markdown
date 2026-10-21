@@ -1,27 +1,19 @@
 ---
 layout: home
-title: "Period Comparison"
+title: "Books Over Time"
 permalink: /Graphs/comparison.html
 ---
 
 <style>
   .home .page-heading { display: none; }
-  #period-options label { margin-right: 1em; }
 </style>
 
 {% include quick-links.html %}
 {% include table-export.html %}
 {% include chart-common.html %}
 
-<h3>Total by period</h3>
-<table id="totals-table">
-  <thead><tr><th>Period</th><th id="totals-head">Total</th></tr></thead>
-  <tbody></tbody>
-</table>
-
-<h3>Monthly values, all items combined</h3>
-<div>Check the periods to compare.</div>
-<div id="period-options"></div>
+<h3>Cumulative books read</h3>
+<div>Rises when a book is finished and stays flat in months with none.</div>
 <div id="chart-msg"></div>
 <div id="chart"></div>
 <details>
@@ -30,46 +22,58 @@ permalink: /Graphs/comparison.html
 </details>
 
 <script>
-  const chartEl = document.getElementById("chart");
   const msg = document.getElementById("chart-msg");
-  document.getElementById("totals-head").textContent = "Total " + axisLabel;
+  const url = "{{ '/data/Raw Book Data.csv' | relative_url }}".replace(/ /g, "%20");
 
-  loadRecords().then(records => {
-    const sums = sumByPeriod(records);
-    const periods = Object.keys(sums).sort();
-    const colorFor = p => PALETTE[periods.indexOf(p) % PALETTE.length];
+  fetch(url).then(res => {
+    if (!res.ok) throw new Error("could not load book data");
+    return res.text();
+  }).then(text => {
+    const rows = parseCSV(text);
+    const fi = rows[0].map(h => h.trim()).indexOf("Date Finished");
+    if (fi < 0) throw new Error("missing Date Finished column");
 
-    const body = document.querySelector("#totals-table tbody");
-    periods.forEach(p => {
-      const total = sums[p].reduce((a, v) => a + (v || 0), 0);
-      body.insertAdjacentHTML("beforeend", "<tr><td>" + esc(p) + "</td><td>" + fmt(total) + "</td></tr>");
+    const perMonth = {}; // "YYYY-MM" -> books finished
+    rows.slice(1).forEach(r => {
+      const m = (r[fi] || "").trim().match(/^(\d{1,2})\/\d{1,2}\/(\d{2}|\d{4})$/);
+      if (!m) return;
+      const y = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]);
+      const key = y + "-" + String(m[1]).padStart(2, "0");
+      perMonth[key] = (perMonth[key] || 0) + 1;
     });
+    const keys = Object.keys(perMonth).sort();
+    if (!keys.length) throw new Error("no finished books found");
 
-    const options = document.getElementById("period-options");
-    periods.forEach((p, i) => {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.value = p;
-      input.checked = i >= periods.length - 2; // start with the two newest periods
-      input.addEventListener("change", render);
-      label.append(input, " " + p);
-      options.append(label);
-    });
-
-    function render() {
-      const chosen = [...options.querySelectorAll("input:checked")].map(i => i.value).sort();
-      if (!chosen.length) {
-        Plotly.purge(chartEl);
-        document.getElementById("chart-table").replaceChildren();
-        msg.textContent = "Select at least one period.";
-        return;
-      }
-      msg.textContent = "";
-      const series = chosen.map(p => ({ name: p, vals: sums[p], color: colorFor(p) }));
-      drawLines(chartEl, series, () => "Monthly " + CFG.valueLabel + " by period");
-      fillMonthTable(document.getElementById("chart-table"), series);
+    // every month from the first finish to now, so empty months show as flat
+    const now = new Date();
+    const end = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    const last = keys[keys.length - 1] > end ? keys[keys.length - 1] : end;
+    const labels = [], totals = [];
+    let [y, mo] = keys[0].split("-").map(Number), sum = 0;
+    for (;;) {
+      const key = y + "-" + String(mo).padStart(2, "0");
+      sum += perMonth[key] || 0;
+      labels.push(MONTH_NAMES[mo - 1] + " " + y);
+      totals.push(sum);
+      if (key === last) break;
+      if (++mo > 12) { mo = 1; y++; }
     }
-    render();
+
+    Plotly.newPlot("chart", [{
+      x: labels, y: totals, type: "scatter", mode: "lines+markers",
+      line: { color: PALETTE[0], width: 2 }, marker: { size: 7 },
+      hovertemplate: "%{y} books"
+    }], {
+      height: 450,
+      margin: { t: 20, r: 24, b: 60, l: 70 },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { color: "#1f2937" },
+      xaxis: { type: "category", gridcolor: "#d1d5db", fixedrange: true },
+      yaxis: { title: "Books read (cumulative)", rangemode: "tozero", gridcolor: "#d1d5db", fixedrange: true }
+    }, { responsive: true, displaylogo: false });
+
+    const table = document.getElementById("chart-table");
+    table.insertAdjacentHTML("beforeend", "<tr><th>Month</th><th>Cumulative books</th></tr>");
+    labels.forEach((l, i) => table.insertAdjacentHTML("beforeend", "<tr><td>" + l + "</td><td>" + totals[i] + "</td></tr>"));
   }).catch(err => { msg.textContent = "Failed to load chart: " + err.message; });
 </script>

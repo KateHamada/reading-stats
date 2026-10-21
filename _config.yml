@@ -18,18 +18,12 @@
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
 
-title: My Graph Site
+title: Reading Stats
 email:
 description: >- # this means to ignore newlines until "baseurl:"
   A GitHub Pages template for displaying graphs from a CSV file.
-baseurl: "/Github-Pages-Template" # the subpath of your site: "/<repo-name>" for a project site, "" for a user site
-url: "https://uhm-campus-energy.github.io" # the base hostname & protocol for your site
-
-# Graph settings (see README.md)
-data_file: data/sample.csv   # CSV with columns: item, date (YYYY-M-D), value
-value_label: Value           # what the numbers measure, used in titles and axis labels
-value_unit: units            # shown on the y axis, hover text and PNG exports; may be blank
-start_month: 1               # 1 = calendar-year periods; 7 = July-June periods labelled FY24, etc.
+baseurl: "/reading-stats" # the subpath of your site: "/<repo-name>" for a project site, "" for a user site
+url: "https://KateHamada.github.io" # the base hostname & protocol for your site
 
 # Build settings
 theme: minima
