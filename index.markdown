@@ -16,21 +16,31 @@ layout: home
   .year-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
   .year-row .stat-box { margin: 0; }
   .pie { width: 280px; height: 240px; }
+  .year-cols { display: flex; flex-wrap: wrap; gap: 32px; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 
-<h1 id="year-heading">Reading this year</h1>
-<div class="year-row">
-  <div class="stat-box">
-    <div class="stat-label">Books read</div>
-    <div class="stat-value" id="year-books">Loading...</div>
+<div class="year-cols">
+  {% assign cols = "cur,prev" | split: "," %}
+  {% for c in cols %}
+  <div class="year-col">
+    <h1 id="{{ c }}-heading">Loading...</h1>
+    <div class="year-row">
+      <div class="stat-box">
+        <div class="stat-label">Books read</div>
+        <div class="stat-value" id="{{ c }}-books">Loading...</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Pages read</div>
+        <div class="stat-value" id="{{ c }}-pages">Loading...</div>
+      </div>
+    </div>
+    <div class="year-row">
+      <div class="pie" id="{{ c }}-pie-format"></div>
+      <div class="pie" id="{{ c }}-pie-fiction"></div>
+    </div>
   </div>
-  <div class="stat-box">
-    <div class="stat-label">Pages read</div>
-    <div class="stat-value" id="year-pages">Loading...</div>
-  </div>
-  <div class="pie" id="pie-format"></div>
-  <div class="pie" id="pie-fiction"></div>
+  {% endfor %}
 </div>
 <script>
   (function () {
@@ -58,7 +68,6 @@ layout: home
     }
 
     const year = new Date().getFullYear();
-    document.getElementById("year-heading").textContent = "Reading in " + year;
     const url = "{{ '/data/Raw Book Data.csv' | relative_url }}".replace(/ /g, "%20");
     fetch(url).then(res => {
       if (!res.ok) throw new Error("could not load book data");
@@ -70,23 +79,17 @@ layout: home
       if (fi < 0 || pi < 0) throw new Error("missing Date Finished or Page Count column");
       const fiI = header.indexOf("Fiction vs Nonfiction"), fmI = header.indexOf("Comic/Manga vs Chapter Books");
       const byYear = {};
-      const cur_ = { fiction: { F: 0, NF: 0 }, format: { CM: 0, CB: 0 } };
       rows.slice(1).forEach(r => {
         const m = (r[fi] || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
         if (!m) return;
         const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
-        const s = byYear[y] = byYear[y] || { books: 0, pages: 0 };
+        const s = byYear[y] = byYear[y] || { books: 0, pages: 0, F: 0, NF: 0, CM: 0, CB: 0 };
         s.books++;
         s.pages += parseInt((r[pi] || "").replace(/,/g, ""), 10) || 0;
-        if (y === year) {
-          const f = (r[fiI] || "").trim().toUpperCase(), c = (r[fmI] || "").trim().toUpperCase();
-          if (f in cur_.fiction) cur_.fiction[f]++;
-          if (c in cur_.format) cur_.format[c]++;
-        }
+        const f = (r[fiI] || "").trim().toUpperCase(), c = (r[fmI] || "").trim().toUpperCase();
+        if (f === "F" || f === "NF") s[f]++;
+        if (c === "CM" || c === "CB") s[c]++;
       });
-      const cur = byYear[year] || { books: 0, pages: 0 };
-      document.getElementById("year-books").textContent = fmt(cur.books);
-      document.getElementById("year-pages").textContent = fmt(cur.pages);
 
       function pie(id, title, labels, values) {
         Plotly.newPlot(id, [{
@@ -99,12 +102,22 @@ layout: home
           paper_bgcolor: "rgba(0,0,0,0)", font: { color: "#1f2937" }
         }, { displaylogo: false, displayModeBar: false, responsive: true });
       }
-      if (cur.books) {
-        pie("pie-format", year + ": comic/manga vs chapter books", ["Comic/Manga", "Chapter books"], [cur_.format.CM, cur_.format.CB]);
-        pie("pie-fiction", year + ": fiction vs nonfiction", ["Fiction", "Nonfiction"], [cur_.fiction.F, cur_.fiction.NF]);
-      } else {
-        document.getElementById("pie-format").textContent = "No books finished in " + year + " yet.";
+
+      function showYear(prefix, y) {
+        const s = byYear[y] || { books: 0, pages: 0, F: 0, NF: 0, CM: 0, CB: 0 };
+        document.getElementById(prefix + "-heading").textContent = "Reading in " + y;
+        document.getElementById(prefix + "-books").textContent = fmt(s.books);
+        document.getElementById(prefix + "-pages").textContent = fmt(s.pages);
+        if (s.books) {
+          pie(prefix + "-pie-format", y + ": comic/manga vs chapter books", ["Comic/Manga", "Chapter books"], [s.CM, s.CB]);
+          pie(prefix + "-pie-fiction", y + ": fiction vs nonfiction", ["Fiction", "Nonfiction"], [s.F, s.NF]);
+        } else {
+          document.getElementById(prefix + "-pie-format").textContent = "No books finished in " + y + ".";
+        }
       }
+      showYear("cur", year);
+      showYear("prev", year - 1);
+
       const body = document.querySelector("#prev-table tbody");
       Object.keys(byYear).map(Number).filter(y => y !== year).sort((a, b) => b - a).forEach(y => {
         body.insertAdjacentHTML("beforeend", "<tr><td>" + y + "</td><td>" + fmt(byYear[y].books) + "</td><td>" + fmt(byYear[y].pages) + "</td></tr>");
@@ -113,8 +126,8 @@ layout: home
         body.insertAdjacentHTML("beforeend", "<tr><td colspan='3'>No previous years yet.</td></tr>");
       }
     }).catch(err => {
-      document.getElementById("year-books").textContent = "Failed to load data: " + err.message;
-      document.getElementById("year-pages").textContent = "";
+      document.getElementById("cur-books").textContent = "Failed to load data: " + err.message;
+      ["cur-pages", "prev-books", "prev-pages"].forEach(id => { document.getElementById(id).textContent = ""; });
     });
   })();
 </script>
